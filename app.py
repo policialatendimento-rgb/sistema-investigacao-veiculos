@@ -1,4 +1,3 @@
-
 # =============================================================================
 # INSTRUÇÕES DE INSTALAÇÃO E EXECUÇÃO
 # =============================================================================
@@ -375,5 +374,3 @@ else:
         
         st.markdown("### Pré-visualização dos Dados Finais")
         st.dataframe(df.head(100), use_container_width=True)
-
-```
