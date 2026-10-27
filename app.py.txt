@@ -1,0 +1,379 @@
+```python
+# =============================================================================
+# INSTRUÇÕES DE INSTALAÇÃO E EXECUÇÃO
+# =============================================================================
+# 1. Instale o Python na sua máquina (https://www.python.org/downloads/)
+# 2. Abra o terminal (Prompt de Comando ou PowerShell) e instale as dependências:
+#    pip install streamlit pandas plotly folium streamlit-folium
+# 3. Salve este código em um arquivo chamado: app.py
+# 4. No terminal, navegue até a pasta onde salvou o arquivo e rode o comando:
+#    streamlit run app.py
+# =============================================================================
+
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import folium
+from streamlit_folium import st_folium
+from folium.plugins import HeatMap
+import re
+import numpy as np
+import io
+
+# =============================================================================
+# CONFIGURAÇÃO DA PÁGINA
+# =============================================================================
+st.set_page_config(
+    page_title="Sistema de Investigação - Roubo de Veículos",
+    page_icon="🚓",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# =============================================================================
+# VARIÁVEIS GLOBAIS E INICIALIZAÇÃO DE ESTADO
+# =============================================================================
+COLUNAS_ENRIQUECIMENTO = [
+    'Veículo Recuperado?', 'Local de Recuperação', 'Possui Seguro?', 
+    'Nome da Seguradora', 'Ofício Enviado?', 'Possui Rastreamento?', 
+    'Localização do Rastreamento'
+]
+
+if 'df' not in st.session_state:
+    st.session_state['df'] = pd.DataFrame()
+
+if 'proc_input' not in st.session_state:
+    st.session_state['proc_input'] = ""
+
+# Função de máscara para o Procedimento: 000-00000/0000
+def aplicar_mascara_procedimento():
+    texto = st.session_state.proc_input
+    # Remove tudo que não é número
+    numeros = re.sub(r'\D', '', texto)
+    mascarado = ""
+    if len(numeros) > 0:
+        mascarado += numeros[:3]
+    if len(numeros) > 3:
+        mascarado += "-" + numeros[3:8]
+    if len(numeros) > 8:
+        mascarado += "/" + numeros[8:12]
+    
+    st.session_state.proc_input = mascarado
+
+# =============================================================================
+# BARRA LATERAL (SIDEBAR)
+# =============================================================================
+with st.sidebar:
+    # Placeholder para o logo (pode ser substituído pelo caminho de uma imagem local)
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Bras%C3%A3o_da_Pol%C3%ADcia_Militar_do_Estado_do_Rio_de_Janeiro.svg/1200px-Bras%C3%A3o_da_Pol%C3%ADcia_Militar_do_Estado_do_Rio_de_Janeiro.svg.png", width=150)
+    st.title("Sistema de Inteligência")
+    st.subheader("Investigação de Veículos")
+    st.markdown("---")
+    
+    st.markdown("""
+        **Orientações:**
+        1. Importe a planilha base na aba **Gestão de Planilha**.
+        2. Navegue pelas abas para analisar, buscar e atualizar ocorrências.
+    """)
+    
+    # Rodapé fixo
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #888; font-size: 12px; margin-top: 50px;'>"
+        "<strong>DESENVOLVIDO POR:</strong><br>OFICIAL DE POLÍCIA KELVE CALAIS<br>VERSÃO 1.0"
+        "</div>", 
+        unsafe_allow_html=True
+    )
+
+# =============================================================================
+# ESTRUTURA DE ABAS
+# =============================================================================
+st.title("🚓 Dashboard Integrado de Investigação Criminal")
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "1️⃣ Dashboard & Mapa", 
+    "2️⃣ Gestão de Planilha", 
+    "3️⃣ Busca e Atualização", 
+    "4️⃣ Análise Avançada (High-Tech)", 
+    "5️⃣ Exportação"
+])
+
+df = st.session_state['df']
+
+# -----------------------------------------------------------------------------
+# ABA 2: GESTÃO DE PLANILHA (Colocada no código antes para fluxo lógico)
+# -----------------------------------------------------------------------------
+with tab2:
+    st.header("📂 Gestão de Dados e Importação")
+    
+    arquivo_importado = st.file_uploader("Arraste ou selecione a planilha de base (CSV ou Excel)", type=["csv", "xlsx", "xls"])
+    
+    if arquivo_importado is not None:
+        try:
+            if arquivo_importado.name.endswith('.csv'):
+                df_temp = pd.read_csv(arquivo_importado)
+            else:
+                df_temp = pd.read_excel(arquivo_importado)
+            
+            # Garantir colunas de enriquecimento
+            for col in COLUNAS_ENRIQUECIMENTO:
+                if col not in df_temp.columns:
+                    df_temp[col] = "Não Informado"
+            
+            # Limpeza básica (exemplo: Situação Final subritaida -> Subtraída)
+            if 'Situação Final' in df_temp.columns:
+                df_temp['Situação Final'] = df_temp['Situação Final'].replace(
+                    {'subritaida': 'Subtraída', 'SUBRITAIDA': 'Subtraída'}, regex=True
+                )
+            
+            # Salvar no session state
+            if st.button("Carregar Dados para o Sistema"):
+                st.session_state['df'] = df_temp
+                st.success(f"Arquivo '{arquivo_importado.name}' carregado com sucesso! ({len(df_temp)} registros encontrados).")
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"Erro ao ler o arquivo: {e}")
+            
+    if not df.empty:
+        st.markdown("### Status do Sistema")
+        st.info(f"O sistema possui atualmente **{len(df)}** registros ativos em memória.")
+        
+        # Botão Perigoso para Limpar
+        if st.button("🗑️ Apagar Planilha e Limpar Sistema", type="primary"):
+            st.session_state['df'] = pd.DataFrame()
+            st.success("Dados apagados. O sistema está vazio.")
+            st.rerun()
+
+# -----------------------------------------------------------------------------
+# SE NÃO HOUVER DADOS, BLOQUEAR AS OUTRAS ABAS
+# -----------------------------------------------------------------------------
+if df.empty:
+    for t in [tab1, tab3, tab4, tab5]:
+        with t:
+            st.warning("Nenhum dado carregado. Por favor, importe a planilha na aba '2️⃣ Gestão de Planilha'.")
+else:
+    # -----------------------------------------------------------------------------
+    # ABA 1: DASHBOARD ANALÍTICO E MANCHA CRIMINAL
+    # -----------------------------------------------------------------------------
+    with tab1:
+        st.header("📊 Visão Geral e Mancha Criminal")
+        
+        # KPIs Superiores
+        col1, col2, col3, col4 = st.columns(4)
+        
+        total_roubos = len(df)
+        
+        # Tentando identificar carros e motos
+        col_veiculo = 'Tipo Veículo' if 'Tipo Veículo' in df.columns else None
+        total_carros = len(df[df[col_veiculo].str.contains('CARRO|AUTOMOVEL|AUTO', case=False, na=False)]) if col_veiculo else "N/A"
+        total_motos = len(df[df[col_veiculo].str.contains('MOTO', case=False, na=False)]) if col_veiculo else "N/A"
+        
+        recuperados = len(df[df['Veículo Recuperado?'] == 'Sim'])
+        taxa_recuperacao = (recuperados / total_roubos * 100) if total_roubos > 0 else 0
+        
+        col1.metric("Total de Ocorrências", total_roubos)
+        col2.metric("Carros Roubados", total_carros)
+        col3.metric("Motos Roubadas", total_motos)
+        col4.metric("Taxa de Recuperação", f"{taxa_recuperacao:.1f}%")
+        
+        st.markdown("---")
+        
+        mapa_col, graficos_col = st.columns([1.2, 1])
+        
+        with mapa_col:
+            st.subheader("🗺️ Mancha Criminal (Heatmap Mockado)")
+            st.caption("Como a planilha geralmente não possui Lat/Lon exatos, este mapa gera uma dispersão baseada na densidade dos logradouros para visualização da mancha.")
+            
+            # Gerando coordenadas fictícias baseadas em um ponto central (Rio de Janeiro) 
+            # Apenas para demonstração estrutural requerida
+            centro_rj = [-22.9068, -43.1729]
+            
+            # Inicializa mapa
+            m = folium.Map(location=centro_rj, zoom_start=11, tiles='CartoDB dark_matter')
+            
+            # Se houvesse latitude e longitude reais, usaríamos elas. 
+            # Aqui simulamos uma distribuição aleatória em torno do centro para os registros.
+            heat_data = []
+            for _ in range(min(500, len(df))): # Limita a 500 para performance
+                lat_offset = np.random.normal(0, 0.05)
+                lon_offset = np.random.normal(0, 0.05)
+                heat_data.append([centro_rj[0] + lat_offset, centro_rj[1] + lon_offset])
+                
+            HeatMap(heat_data, radius=15, blur=20).add_to(m)
+            st_folium(m, width="100%", height=400, returned_objects=[])
+
+        with graficos_col:
+            st.subheader("📍 Hotspots por DP e Bairro")
+            if 'DP Circunscrição' in df.columns:
+                dp_counts = df['DP Circunscrição'].value_counts().head(5).reset_index()
+                dp_counts.columns = ['DP', 'Ocorrências']
+                fig_dp = px.bar(dp_counts, y='DP', x='Ocorrências', orientation='h', color='Ocorrências', color_continuous_scale='Reds')
+                fig_dp.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=200)
+                st.plotly_chart(fig_dp, use_container_width=True)
+
+            if 'Logradouro' in df.columns:
+                log_counts = df['Logradouro'].value_counts().head(5).reset_index()
+                log_counts.columns = ['Logradouro', 'Ocorrências']
+                fig_log = px.bar(log_counts, y='Logradouro', x='Ocorrências', orientation='h', color='Ocorrências', color_continuous_scale='Oranges')
+                fig_log.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=200)
+                st.plotly_chart(fig_log, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("🚘 Perfil Veicular")
+        if 'Marca/Modelo' in df.columns:
+            modelo_counts = df['Marca/Modelo'].value_counts().head(10).reset_index()
+            modelo_counts.columns = ['Marca/Modelo', 'Quantidade']
+            fig_modelo = px.bar(modelo_counts, x='Quantidade', y='Marca/Modelo', orientation='h', title='Top 10 Modelos Mais Visados', template='plotly_dark')
+            st.plotly_chart(fig_modelo, use_container_width=True)
+
+    # -----------------------------------------------------------------------------
+    # ABA 3: BUSCA E ATUALIZAÇÃO (CRUD)
+    # -----------------------------------------------------------------------------
+    with tab3:
+        st.header("🔍 Busca e Enriquecimento de Dados")
+        
+        st.markdown("Busque por um veículo específico para atualizar informações de recuperação, seguro e rastreamento.")
+        
+        col_busca1, col_busca2 = st.columns(2)
+        
+        with col_busca1:
+            st.text_input("Número do Procedimento (Mascara Automática):", 
+                          key="proc_input", 
+                          on_change=aplicar_mascara_procedimento,
+                          placeholder="000-00000/0000")
+            
+        with col_busca2:
+            placa_input = st.text_input("Ou Placa do Veículo:", placeholder="ABC1D23 ou ABC1234").upper().strip()
+
+        # Botão de busca processada visualmente
+        proc_atual = st.session_state.proc_input
+
+        df_resultado = pd.DataFrame()
+        if proc_atual:
+            df_resultado = df[df['Procedimento'] == proc_atual]
+        elif placa_input:
+            df_resultado = df[df['Placa'].astype(str).str.upper() == placa_input]
+
+        if not df_resultado.empty:
+            idx = df_resultado.index[0] # Pega o primeiro registro encontrado
+            registro = df.loc[idx]
+            
+            st.success("✅ Ocorrência Encontrada!")
+            
+            # Exibição do Cartão Original
+            st.markdown("### 📑 Dados Originais da Ocorrência")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.markdown(f"**Procedimento:**<br>{registro.get('Procedimento', 'N/A')}", unsafe_allow_html=True)
+            c2.markdown(f"**Placa:**<br>{registro.get('Placa', 'N/A')}", unsafe_allow_html=True)
+            c3.markdown(f"**Veículo:**<br>{registro.get('Marca/Modelo', 'N/A')} ({registro.get('Cor', 'N/A')})", unsafe_allow_html=True)
+            c4.markdown(f"**Data Fato:**<br>{registro.get('Data Fato', 'N/A')}", unsafe_allow_html=True)
+            
+            st.markdown("---")
+            st.markdown("### ✏️ Enriquecimento de Dados da Investigação")
+            
+            with st.form("form_atualizacao"):
+                f1, f2 = st.columns(2)
+                
+                recuperado_idx = 0 if registro['Veículo Recuperado?'] == 'Sim' else (1 if registro['Veículo Recuperado?'] == 'Não' else 2)
+                opcoes_sim_nao = ["Sim", "Não", "Não Informado"]
+                
+                val_recuperado = f1.selectbox("Veículo Recuperado?", opcoes_sim_nao, index=recuperado_idx)
+                val_local_rec = f1.text_input("Local de Recuperação", value=registro['Local de Recuperação'] if registro['Local de Recuperação'] != 'Não Informado' else "")
+                
+                seguro_idx = opcoes_sim_nao.index(registro['Possui Seguro?']) if registro['Possui Seguro?'] in opcoes_sim_nao else 2
+                val_seguro = f1.selectbox("Possui Seguro?", opcoes_sim_nao, index=seguro_idx)
+                
+                val_nome_seg = f2.text_input("Nome da Seguradora", value=registro['Nome da Seguradora'] if registro['Nome da Seguradora'] != 'Não Informado' else "")
+                
+                oficio_idx = opcoes_sim_nao.index(registro['Ofício Enviado?']) if registro['Ofício Enviado?'] in opcoes_sim_nao else 2
+                val_oficio = f2.selectbox("Ofício Enviado?", opcoes_sim_nao, index=oficio_idx)
+                
+                rastreio_idx = opcoes_sim_nao.index(registro['Possui Rastreamento?']) if registro['Possui Rastreamento?'] in opcoes_sim_nao else 2
+                val_rastreio = f2.selectbox("Possui Rastreamento?", opcoes_sim_nao, index=rastreio_idx)
+                
+                val_local_rast = st.text_input("Localização do Rastreamento (Coordenadas ou Endereço)", value=registro['Localização do Rastreamento'] if registro['Localização do Rastreamento'] != 'Não Informado' else "")
+                
+                submitted = st.form_submit_button("💾 Salvar / Atualizar Ocorrência", type="primary")
+                
+                if submitted:
+                    df.at[idx, 'Veículo Recuperado?'] = val_recuperado
+                    df.at[idx, 'Local de Recuperação'] = val_local_rec if val_local_rec else "Não Informado"
+                    df.at[idx, 'Possui Seguro?'] = val_seguro
+                    df.at[idx, 'Nome da Seguradora'] = val_nome_seg if val_nome_seg else "Não Informado"
+                    df.at[idx, 'Ofício Enviado?'] = val_oficio
+                    df.at[idx, 'Possui Rastreamento?'] = val_rastreio
+                    df.at[idx, 'Localização do Rastreamento'] = val_local_rast if val_local_rast else "Não Informado"
+                    
+                    # Atualiza o state global
+                    st.session_state['df'] = df
+                    st.success("Dados da ocorrência atualizados com sucesso no sistema!")
+                    
+        elif proc_atual or placa_input:
+            st.warning("⚠️ Ocorrência não encontrada na base de dados. Verifique a Placa ou o Procedimento.")
+
+    # -----------------------------------------------------------------------------
+    # ABA 4: ANÁLISE AVANÇADA E CRUZAMENTO (High-Tech)
+    # -----------------------------------------------------------------------------
+    with tab4:
+        st.header("🔬 Laboratório de Dados (Pivot & Cruzamento)")
+        
+        st.markdown("Crie suas próprias tabelas dinâmicas e cruze variáveis para identificar padrões complexos da criminalidade.")
+        
+        col_piv1, col_piv2, col_piv3 = st.columns(3)
+        colunas_validas = df.columns.tolist()
+        
+        eixo_linha = col_piv1.selectbox("Eixo de Linha (X):", colunas_validas, index=colunas_validas.index('DP Circunscrição') if 'DP Circunscrição' in colunas_validas else 0)
+        eixo_coluna = col_piv2.selectbox("Eixo de Coluna (Y):", colunas_validas, index=colunas_validas.index('Tipo Veículo') if 'Tipo Veículo' in colunas_validas else 0)
+        
+        if st.button("Gerar Tabela Dinâmica"):
+            try:
+                pivot = pd.crosstab(df[eixo_linha], df[eixo_coluna])
+                st.dataframe(pivot, use_container_width=True)
+                
+                # Gráfico Automático Baseado na Pivot
+                fig_dinamica = px.bar(pivot, barmode='group', template='plotly_dark', title=f"Cruzamento: {eixo_linha} vs {eixo_coluna}")
+                st.plotly_chart(fig_dinamica, use_container_width=True)
+            except Exception as e:
+                st.error("Erro ao gerar tabela. Certifique-se de que os campos selecionados são válidos para cruzamento.")
+        
+        st.markdown("---")
+        st.subheader("🌌 Gráfico de Bolhas Avançado")
+        b1, b2, b3 = st.columns(3)
+        x_axis = b1.selectbox("Variável X", colunas_validas, index=colunas_validas.index('Cor') if 'Cor' in colunas_validas else 0)
+        y_axis = b2.selectbox("Variável Y", colunas_validas, index=colunas_validas.index('Marca/Modelo') if 'Marca/Modelo' in colunas_validas else 0)
+        color_axis = b3.selectbox("Cor / Segmentação", colunas_validas, index=colunas_validas.index('Veículo Recuperado?') if 'Veículo Recuperado?' in colunas_validas else 0)
+        
+        if st.button("Gerar Gráfico de Dispersão"):
+            # Para criar um bubble chart categórico eficiente com Plotly, agrupamos e contamos
+            df_grouped = df.groupby([x_axis, y_axis, color_axis]).size().reset_index(name='Volume')
+            df_grouped = df_grouped[df_grouped['Volume'] > 1] # Filtra ruídos para renderizar melhor
+            
+            fig_scatter = px.scatter(
+                df_grouped, x=x_axis, y=y_axis, size='Volume', color=color_axis,
+                hover_name='Volume', size_max=40, template='plotly_dark',
+                title="Padrões de Alta Densidade (Ocorrências recorrentes > 1)"
+            )
+            st.plotly_chart(fig_scatter, use_container_width=True)
+
+    # -----------------------------------------------------------------------------
+    # ABA 5: EXPORTAÇÃO DE DADOS
+    # -----------------------------------------------------------------------------
+    with tab5:
+        st.header("📥 Exportação de Base de Dados Consolidada")
+        st.markdown("Baixe a planilha contendo os dados originais acrescidos de todas as edições, correções e enriquecimentos feitos no sistema.")
+        
+        csv_export = df.to_csv(index=False, encoding='utf-8-sig')
+        
+        st.download_button(
+            label="⬇️ Baixar Planilha Atualizada (.CSV)",
+            data=csv_export,
+            file_name="relatorio_investigacao_veiculos.csv",
+            mime="text/csv",
+            type="primary"
+        )
+        
+        st.markdown("### Pré-visualização dos Dados Finais")
+        st.dataframe(df.head(100), use_container_width=True)
+
+```
